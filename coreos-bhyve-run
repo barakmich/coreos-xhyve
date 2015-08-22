@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+VMM_NAME="coreosguest"
+MEM_SIZE="2048M"
+N_CPUS="4"
+IMAGE=""
+#IMAGE="-s 3:0,virtio-blk,./coreos.img" 
+KERNEL_OPTIONS="coreos.autologin"
+
+CHANNEL=${CHANNEL:-alpha}
+
+LATEST=$(ls -r imgs/${CHANNEL}.*.vmlinuz | head -n 1 | sed -e "s,.*${CHANNEL}.,," -e "s,.coreos_.*,,")
+if [[ -z ${LATEST} ]]; then
+    echo "Error: couldn't find anything to load locally (${CHANNEL} channel)."
+    echo "       please run 'coreos-xhyve-fetch' first."
+    exit 1
+fi
+VERSION=${VERSION:-${LATEST}}
+PAYLOAD=${CHANNEL}.${VERSION}.coreos_production_pxe
+VMLINUZ=${PAYLOAD}.vmlinuz
+INITRD=${PAYLOAD}_image.cpio.gz
+
+echo $INITRD
+
+grub-bhyve -M $MEM_SIZE $VMM_NAME > /dev/null <<EOF
+linux (host)$PWD/imgs/$VMLINUZ $KERNEL_OPTIONS
+initrd (host)$PWD/imgs/$INITRD
+boot
+EOF
+
+bhyve -A -H -P -s 0:0,hostbridge -s 1:0,lpc -s 2:0,virtio-net,tap0 $IMAGE -l com1,stdio -c $N_CPUS -m $MEM_SIZE $VMM_NAME 
+
+bhyvectl --destroy --vm=$VMM_NAME
